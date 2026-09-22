@@ -1,0 +1,22 @@
+# Imagem com Android SDK 34 e OpenJDK 17 oficial
+FROM ghcr.io/cirruslabs/android-sdk:34 AS builder
+
+WORKDIR /workspace
+
+# Instala Gradle 8.5
+RUN apt-get update -qq && apt-get install -y -qq wget unzip && \
+    wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip && \
+    unzip -q gradle-8.5-bin.zip -d /opt && \
+    rm gradle-8.5-bin.zip && \
+    ln -s /opt/gradle-8.5/bin/gradle /usr/local/bin/gradle
+
+# Copia os arquivos do aplicativo mobile
+COPY mobile-app /workspace/mobile-app
+
+WORKDIR /workspace/mobile-app/android
+
+# Compila o APK Android
+RUN gradle assembleDebug --stacktrace --no-daemon
+
+# Copia o APK compilado para o diretório montado (/output)
+CMD ["sh", "-c", "mkdir -p /output && cp app/build/outputs/apk/debug/app-debug.apk /output/cooperativa-votacao.apk && chmod 777 /output/cooperativa-votacao.apk && echo '===================================================' && echo '✅ APK compilado com sucesso e salvo na pasta raiz:' && echo '📁 cooperativa-votacao.apk' && echo '==================================================='"]

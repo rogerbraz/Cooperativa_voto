@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: votacao-cooperativa-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=votacao_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - votacao-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: votacao-cooperativa-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=votacao_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d votacao_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - votacao-network
+
+  # Gerador automático do APK para celular Android
+  apk-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.apk
+    container_name: cooperativa-apk-builder
+    volumes:
+      - ./:/output
+    profiles:
+      - apk
+    networks:
+      - votacao-network
+
+volumes:
+  postgres_data:
+    name: votacao_postgres_data
+
+networks:
+  votacao-network:
+    name: votacao_network
+    driver: bridge
