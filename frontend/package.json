@@ -1,0 +1,22 @@
+{
+  "name": "cooperativa-votacao-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interface Web em React para Sistema de Votação em Cooperativas e Simulador Server-Driven UI",
+  "scripts": {
+    "start": "vite --port 3000 --open",
+    "dev": "vite --port 3000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lucide-react": "^0.359.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.1.6"
+  }
+}

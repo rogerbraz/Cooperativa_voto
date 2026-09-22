@@ -1,0 +1,12 @@
+com\cooperativa\votacao\service\strategy\ValidadorVotoStrategyTest.class
+com\cooperativa\votacao\controller\PautaControllerIT.class
+com\cooperativa\votacao\service\PautaServiceTest.class
+com\cooperativa\votacao\service\SessaoVotacaoServiceTest.class
+com\cooperativa\votacao\model\valueobject\CpfTest.class
+com\cooperativa\votacao\controller\MobileUiControllerIT.class
+com\cooperativa\votacao\service\ResultadoServiceTest$1.class
+com\cooperativa\votacao\controller\SessaoVotacaoControllerIT.class
+com\cooperativa\votacao\controller\ResultadoControllerIT.class
+com\cooperativa\votacao\service\ResultadoServiceTest.class
+com\cooperativa\votacao\controller\VotoControllerIT.class
+com\cooperativa\votacao\service\VotoServiceTest.class

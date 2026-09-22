@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: votacao-pautas
+  profiles:
+    active: local
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+integracao:
+  user-info:
+    url: https://user-info.herokuapp.com/users
+    timeout-ms: 3000
+    mock-fallback-enabled: true # Caso a API do herokuapp esteja fora do ar/inativa, permite fallback seguro para desenvolvimento/testes
+
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

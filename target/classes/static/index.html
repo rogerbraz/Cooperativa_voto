@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Cooperativa - Votação Mobile</title>
+    <meta name="theme-color" content="#0b0f19">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React 18 & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0b0f19;
+            color: #f8fafc;
+        }
+        #root {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        /* Scroll container dedicado que garante rolagem livre no celular */
+        .app-scroll-body {
+            flex: 1 1 auto;
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            scroll-behavior: smooth;
+        }
+        input, textarea, select {
+            user-select: text;
+        }
+        .glass-panel {
+            background: rgba(22, 30, 48, 0.94);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .option-card {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .option-card:active {
+            transform: scale(0.98);
+            background: rgba(16, 185, 129, 0.18);
+            border-color: rgba(16, 185, 129, 0.5);
+        }
+        .glow-btn {
+            box-shadow: 0 4px 20px -2px rgba(16, 185, 129, 0.45);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glow-btn:active {
+            transform: scale(0.97);
+            box-shadow: 0 2px 10px -1px rgba(16, 185, 129, 0.2);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const STORAGE_KEY = 'COOPERATIVA_SERVER_URL';
+        const FALLBACK_DEFAULT_IP = 'http://192.168.1.100:8080';
+
+        function getInitialSavedUrl() {
+            try {
+                const salvo = localStorage.getItem(STORAGE_KEY);
+                if (salvo && !salvo.startsWith('file:') && salvo.trim() !== '') {
+                    return salvo;
+                }
+            } catch (e) {}
+            return FALLBACK_DEFAULT_IP;
+        }
+
+        // Geradores de CPF para teste
+        function gerarCpfValido() {
+            const rand = () => Math.floor(Math.random() * 9);
+            const n = Array.from({ length: 9 }, rand);
+            let d1 = n.reduce((acc, curr, idx) => acc + curr * (10 - idx), 0);
+            d1 = 11 - (d1 % 11);
+            if (d1 >= 10) d1 = 0;
+            n.push(d1);
+            let d2 = n.reduce((acc, curr, idx) => acc + curr * (11 - idx), 0);
+            d2 = 11 - (d2 % 11);
+            if (d2 >= 10) d2 = 0;
+            n.push(d2);
+            return n.join('');
+        }
+
+        function gerarCpfInvalido() {
+            const invalidos = ['11111111111', '22222222222', '00000000000', '12345678901', '98765432100'];
+            return invalidos[Math.floor(Math.random() * invalidos.length)];
+        }
+
+        function App() {
+            // Servidor & Conexão
+            const [serverUrl, setServerUrl] = useState(() => getInitialSavedUrl());
+            const [inputIp, setInputIp] = useState(() => getInitialSavedUrl());
+            const [isServerConnected, setIsServerConnected] = useState(false);
+            const [validatingIp, setValidatingIp] = useState(false);
+            const [ipErrorMessage, setIpErrorMessage] = useState('');
+
+            // Navegação por Abas Inferiores (pautas, votar, servidor)
+            const [abaAtual, setAbaAtual] = useState('servidor');
+
+            // Sub-telas / Ações
+            const [subView, setSubView] = useState(null); // 'NOVA_PAUTA' | 'ABRIR_SESSAO' | 'RESULTADO'
+            const [pautaSelecionada, setPautaSelecionada] = useState(null);
+            const [resultadoPauta, setResultadoPauta] = useState(null);
+
+            // Dados
+            const [pautas, setPautas] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [toast, setToast] = useState(null);
+
+            // Formulários
+            const [novoTitulo, setNovoTitulo] = useState('');
+            const [novaDescricao, setNovaDescricao] = useState('');
+            const [duracaoMinutos, setDuracaoMinutos] = useState(1);
+            const [pautaVotoId, setPautaVotoId] = useState('');
+            const [cpfVoto, setCpfVoto] = useState(gerarCpfValido());
+            const [opcaoVoto, setOpcaoVoto] = useState('SIM');
+            const [votoLoading, setVotoLoading] = useState(false);
+
+            const scrollRef = useRef(null);
+
+            // Rolar suavemente para o topo ao alternar de aba ou sub-tela
+            useEffect(() => {
+                if (scrollRef.current) {
+                    scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }, [abaAtual, subView]);
+
+            const showToast = (message, type = 'success') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 4000);
+            };
+
+            // Testar e Validar Conexão com o IP informado
+            const validarEConectarServidor = async (urlToTest) => {
+                setValidatingIp(true);
+                setIpErrorMessage('');
+
+                let cleanUrl = (urlToTest || '').trim();
+                if (!cleanUrl || cleanUrl.startsWith('file:')) {
+                    setIpErrorMessage('Informe o IP ou URL do backend (Ex: http://192.168.1.100:8080 ou http://10.0.2.2:8080).');
+                    setValidatingIp(false);
+                    return false;
+                }
+
+                if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                    cleanUrl = 'http://' + cleanUrl;
+                }
+                cleanUrl = cleanUrl.replace(/\/+$/, '');
+
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+                    const res = await fetch(`${cleanUrl}/api/v1/pautas`, {
+                        method: 'GET',
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        setServerUrl(cleanUrl);
+                        setInputIp(cleanUrl);
+                        localStorage.setItem(STORAGE_KEY, cleanUrl);
+                        setIsServerConnected(true);
+                        setPautas(Array.isArray(data) ? data : []);
+                        setAbaAtual('pautas');
+                        showToast(`Conectado com sucesso ao servidor!`, 'success');
+                        return true;
+                    } else {
+                        setIpErrorMessage(`O servidor respondeu com status HTTP ${res.status}.`);
+                        setIsServerConnected(false);
+                        return false;
+                    }
+                } catch (err) {
+                    setIpErrorMessage('Não foi possível conectar ao servidor. Verifique o IP, porta :8080 e certifique-se de que celular e computador estão no mesmo Wi-Fi.');
+                    setIsServerConnected(false);
+                    return false;
+                } finally {
+                    setValidatingIp(false);
+                }
+            };
+
+            // Valida na inicialização se já houver URL válida
+            useEffect(() => {
+                const salvo = getInitialSavedUrl();
+                setInputIp(salvo);
+                if (salvo && !salvo.startsWith('file:')) {
+                    validarEConectarServidor(salvo);
+                }
+            }, []);
+
+            // Carregar Pautas
+            const carregarPautas = async () => {
+                if (!isServerConnected || !serverUrl) return;
+                try {
+                    setLoading(true);
+                    const res = await fetch(`${serverUrl}/api/v1/pautas`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const lista = Array.isArray(data) ? data : [];
+                        setPautas(lista);
+                        if (lista.length > 0 && !pautaVotoId) {
+                            const aberta = lista.find(p => p.sessaoAberta);
+                            if (aberta) setPautaVotoId(aberta.id.toString());
+                            else setPautaVotoId(lista[0].id.toString());
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Cadastrar Pauta (Formulário)
+            const handleSalvarPauta = async (e) => {
+                e.preventDefault();
+                if (!novoTitulo.trim()) return;
+
+                try {
+                    const res = await fetch(`${serverUrl}/api/v1/pautas`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ titulo: novoTitulo, descricao: novaDescricao })
+                    });
+                    if (res.ok) {
+                        showToast("Pauta cadastrada com sucesso!");
+                        setNovoTitulo('');
+                        setNovaDescricao('');
+                        setSubView(null);
+                        await carregarPautas();
+                    } else {
+                        const err = await res.json();
+                        showToast(err.message || "Erro ao cadastrar", "error");
+                    }
+                } catch (e) {
+                    showToast("Falha ao comunicar com o servidor", "error");
+                }
+            };
+
+            // Abrir Sessão (Formulário)
+            const handleIniciarSessao = async (e) => {
+                e.preventDefault();
+                if (!pautaSelecionada) return;
+
+                try {
+                    const res = await fetch(`${serverUrl}/api/v1/sessoes`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            pautaId: pautaSelecionada.id,
+                            duracaoMinutos: parseInt(duracaoMinutos, 10) || 1
+                        })
+                    });
+                    if (res.ok) {
+                        showToast(`Sessão aberta por ${duracaoMinutos} minuto(s)!`);
+                        setDuracaoMinutos(1);
+                        setSubView(null);
+                        await carregarPautas();
+                    } else {
+                        const err = await res.json();
+                        showToast(err.message || "Erro ao abrir sessão", "error");
+                    }
+                } catch (e) {
+                    showToast("Falha ao comunicar com o servidor", "error");
+                }
+            };
+
+            // Votar (Formulário)
+            const handleRegistrarVoto = async (e) => {
+                e.preventDefault();
+                if (!pautaVotoId || !cpfVoto) {
+                    showToast("Selecione uma pauta e informe o CPF", "error");
+                    return;
+                }
+
+                try {
+                    setVotoLoading(true);
+                    const res = await fetch(`${serverUrl}/api/v1/pautas/${pautaVotoId}/votos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            cpfAssociado: cpfVoto,
+                            opcao: opcaoVoto
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        showToast(`Voto '${data.opcao}' computado! Protocolo #${data.id}`, 'success');
+                        setCpfVoto(gerarCpfValido());
+                        await carregarPautas();
+                    } else {
+                        const err = await res.json();
+                        showToast(err.message || "Erro ao registrar voto", "error");
+                    }
+                } catch (e) {
+                    showToast("Erro de comunicação com a API", "error");
+                } finally {
+                    setVotoLoading(false);
+                }
+            };
+
+            // Consultar Resultado de uma Pauta
+            const handleBuscarResultado = async (pauta) => {
+                try {
+                    const res = await fetch(`${serverUrl}/api/v1/pautas/${pauta.id}/resultado`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setResultadoPauta(data);
+                        setPautaSelecionada(pauta);
+                        setSubView('RESULTADO');
+                    } else {
+                        const err = await res.json();
+                        showToast(err.message || "Resultado indisponível", "error");
+                    }
+                } catch (e) {
+                    showToast("Erro ao buscar resultado", "error");
+                }
+            };
+
+            return (
+                <div className="w-full h-full flex flex-col bg-[#0b0f19] text-slate-100 overflow-hidden select-none">
+                    
+                    {/* Header Topo Fixo */}
+                    <header className="flex-shrink-0 z-30 glass-panel border-b border-slate-800/90 px-4 py-3 flex items-center justify-between shadow-md">
+                        <div className="flex items-center gap-2.5">
+                            {subView && (
+                                <button
+                                    onClick={() => setSubView(null)}
+                                    className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200 font-bold active:scale-95 text-base transition shadow-sm"
+                                    title="Voltar"
+                                >
+                                    &lt;
+                                </button>
+                            )}
+                            <div>
+                                <h1 className="text-sm font-black text-white tracking-tight leading-none flex items-center gap-1.5">
+                                    <span>🏛️</span> Cooperativa Votação
+                                </h1>
+                                <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 mt-1">
+                                    <span className={`w-2 h-2 rounded-full ${isServerConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
+                                    {isServerConnected ? `Conectado: ${serverUrl.replace(/^https?:\/\//, '')}` : `Desconectado`}
+                                </span>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={carregarPautas}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1 active:scale-95 transition"
+                            title="Atualizar dados"
+                        >
+                            <span>🔄</span>
+                        </button>
+                    </header>
+
+                    {/* ÁREA DE CONTEÚDO COM ROLAGEM DEDICADA E TOTALMENTE FLUIDA (PB-32 PARA FOLGA COMPLETA) */}
+                    <div ref={scrollRef} className="app-scroll-body p-4 pb-32">
+                        <div className="w-full max-w-lg mx-auto space-y-4">
+
+                            {/* ======================================================== */}
+                            {/* ABA 1: SERVIDOR (Configurar IP e Conexão)                */}
+                            {/* ======================================================== */}
+                            {abaAtual === 'servidor' && (
+                                <div className="space-y-4 pt-1 animate-fadeIn">
+                                    <div className="text-center space-y-1 pb-1">
+                                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600/30 to-teal-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl mx-auto mb-1 shadow-lg shadow-emerald-500/10">
+                                            ⚙️
+                                        </div>
+                                        <h2 className="text-2xl font-black text-white">Configurar Servidor</h2>
+                                        <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                                            Para utilizar as funções do aplicativo, informe o IP do computador onde o backend está rodando. O app irá validar a conexão antes de liberar o acesso.
+                                        </p>
+                                    </div>
+
+                                    {/* Status de Conexão */}
+                                    <div className={`p-4 rounded-2xl border flex items-center justify-between shadow-md ${
+                                        isServerConnected
+                                            ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                                            : 'bg-slate-900/90 border-slate-700/80 text-slate-400'
+                                    }`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-3.5 h-3.5 rounded-full ${isServerConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></div>
+                                            <div>
+                                                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Status da Conexão</div>
+                                                <div className="text-xs font-bold text-white">
+                                                    {isServerConnected ? `Conectado: ${serverUrl}` : `Aguardando Conexão`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <span className={`text-[10px] font-mono px-2 py-1 rounded-lg border font-black ${
+                                            isServerConnected ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                        }`}>
+                                            {isServerConnected ? 'ONLINE' : 'OFFLINE'}
+                                        </span>
+                                    </div>
+
+                                    {/* Card Principal */}
+                                    <div className="glass-panel rounded-3xl p-5 border border-slate-700/90 space-y-4 shadow-xl">
+                                        <div>
+                                            <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-200 mb-2">
+                                                IP / URL DO SERVIDOR
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={inputIp}
+                                                    onChange={(e) => setInputIp(e.target.value)}
+                                                    placeholder="Ex: http://192.168.1.100:8080"
+                                                    className="w-full bg-slate-900 border-2 border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 shadow-inner"
+                                                />
+                                                {inputIp && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setInputIp('')}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-xs hover:text-white"
+                                                        title="Limpar"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Atalhos Rápidos */}
+                                        <div className="space-y-2">
+                                            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                                                Atalhos rápidos:
+                                            </span>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputIp('http://localhost:8080')}
+                                                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-slate-200 border border-slate-700 text-left active:scale-95 transition flex items-center gap-1.5"
+                                                >
+                                                    <span>💻</span> localhost:8080
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputIp('http://10.0.2.2:8080')}
+                                                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-slate-200 border border-slate-700 text-left active:scale-95 transition flex items-center gap-1.5"
+                                                >
+                                                    <span>📱</span> 10.0.2.2 (Emulador)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputIp('http://192.168.1.100:8080')}
+                                                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-slate-200 border border-slate-700 text-left active:scale-95 transition flex items-center gap-1.5"
+                                                >
+                                                    <span>🌐</span> 192.168.1.100:8080
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInputIp('http://192.168.0.100:8080')}
+                                                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-slate-200 border border-slate-700 text-left active:scale-95 transition flex items-center gap-1.5"
+                                                >
+                                                    <span>🌐</span> 192.168.0.100:8080
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Alerta de Erro */}
+                                        {ipErrorMessage && (
+                                            <div className="p-4 rounded-2xl bg-rose-950/80 border-2 border-rose-600/60 text-rose-200 text-xs leading-relaxed space-y-1">
+                                                <div className="font-black flex items-center gap-1.5 text-rose-300">
+                                                    <span>⚠️</span> Não foi possível conectar ao servidor.
+                                                </div>
+                                                <p>{ipErrorMessage}</p>
+                                            </div>
+                                        )}
+
+                                        {/* BOTÃO CONFIRMAR E VALIDAR IP (TOTALMENTE VISÍVEL E COM ESPAÇO) */}
+                                        <div className="pt-2 pb-2">
+                                            <button
+                                                type="button"
+                                                disabled={validatingIp}
+                                                onClick={() => validarEConectarServidor(inputIp)}
+                                                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-sm uppercase tracking-wider glow-btn border border-emerald-300/40 disabled:opacity-50 flex items-center justify-center gap-2 shadow-2xl"
+                                            >
+                                                {validatingIp ? (
+                                                    <>
+                                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                        <span>VALIDANDO CONEXÃO...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <span className="text-lg">✅</span>
+                                                        <span>CONFIRMAR E VALIDAR IP</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ======================================================== */}
+                            {/* ABA 2: PAUTAS (Pautas, Cadastro, Sessões e Resultados)   */}
+                            {/* ======================================================== */}
+                            {abaAtual === 'pautas' && (
+                                <div className="space-y-4 pt-1 animate-fadeIn">
+                                    {subView === 'NOVA_PAUTA' ? (
+                                        <div className="space-y-4">
+                                            <div className="text-center pb-1">
+                                                <h2 className="text-2xl font-black text-white">Cadastrar Nova Pauta</h2>
+                                                <p className="text-xs text-slate-400">Preencha os detalhes da pauta deliberativa:</p>
+                                            </div>
+
+                                            <div className="glass-panel rounded-3xl p-5 border border-slate-700 space-y-4 shadow-xl">
+                                                <form onSubmit={handleSalvarPauta} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300 mb-1.5">
+                                                            Título da Pauta
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={novoTitulo}
+                                                            onChange={(e) => setNovoTitulo(e.target.value)}
+                                                            placeholder="Ex: Reforma da Sede e Instalação Solar"
+                                                            className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                                                            required
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300 mb-1.5">
+                                                            Descrição Detalhada
+                                                        </label>
+                                                        <textarea
+                                                            value={novaDescricao}
+                                                            onChange={(e) => setNovaDescricao(e.target.value)}
+                                                            placeholder="Justificativa e objetivos da deliberação..."
+                                                            rows="4"
+                                                            className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500"
+                                                        ></textarea>
+                                                    </div>
+
+                                                    <div className="pt-2 space-y-3">
+                                                        <button
+                                                            type="submit"
+                                                            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-black text-sm uppercase tracking-wider glow-btn flex items-center justify-center gap-2 shadow-xl"
+                                                        >
+                                                            <span>💾</span>
+                                                            <span>Salvar Pauta</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSubView(null)}
+                                                            className="w-full py-3.5 rounded-2xl bg-slate-800 text-slate-300 text-xs font-bold active:scale-98 transition flex items-center justify-center gap-1.5"
+                                                        >
+                                                            <span>⬅️</span>
+                                                            <span>Voltar para Lista de Pautas</span>
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    ) : subView === 'ABRIR_SESSAO' && pautaSelecionada ? (
+                                        <div className="space-y-4">
+                                            <div className="text-center pb-1">
+                                                <h2 className="text-2xl font-black text-white">Abrir Sessão de Votação</h2>
+                                                <p className="text-xs text-emerald-400 font-bold">Pauta #{pautaSelecionada.id} - {pautaSelecionada.titulo}</p>
+                                            </div>
+
+                                            <div className="glass-panel rounded-3xl p-5 border border-slate-700 space-y-4 shadow-xl">
+                                                <form onSubmit={handleIniciarSessao} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300 mb-2">
+                                                            Duração da Sessão
+                                                        </label>
+                                                        
+                                                        <div className="grid grid-cols-4 gap-2 mb-2.5">
+                                                            {[1, 5, 10, 30].map(mins => (
+                                                                <button
+                                                                    key={mins}
+                                                                    type="button"
+                                                                    onClick={() => setDuracaoMinutos(mins)}
+                                                                    className={`py-2 rounded-xl text-xs font-extrabold border transition ${
+                                                                        duracaoMinutos === mins
+                                                                            ? 'bg-emerald-600 text-white border-emerald-400 shadow-md'
+                                                                            : 'bg-slate-900 text-slate-300 border-slate-700'
+                                                                    }`}
+                                                                >
+                                                                    {mins} min
+                                                                </button>
+                                                            ))}
+                                                        </div>
+
+                                                        <div className="relative">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                value={duracaoMinutos}
+                                                                onChange={(e) => setDuracaoMinutos(e.target.value)}
+                                                                className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
+                                                                required
+                                                            />
+                                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                                                                minutos
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="pt-2 space-y-3">
+                                                        <button
+                                                            type="submit"
+                                                            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-black text-sm uppercase tracking-wider glow-btn flex items-center justify-center gap-2 shadow-xl"
+                                                        >
+                                                            <span>⚡</span>
+                                                            <span>Iniciar Votação Agora</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSubView(null)}
+                                                            className="w-full py-3.5 rounded-2xl bg-slate-800 text-slate-300 text-xs font-bold active:scale-98 transition flex items-center justify-center gap-1.5"
+                                                        >
+                                                            <span>⬅️</span>
+                                                            <span>Voltar</span>
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    ) : subView === 'RESULTADO' && resultadoPauta ? (
+                                        <div className="space-y-4">
+                                            <div className="text-center pb-1">
+                                                <h2 className="text-2xl font-black text-white">Resultado da Apuração</h2>
+                                                <p className="text-xs text-slate-400">Pauta #{resultadoPauta.pautaId} - {resultadoPauta.pautaTitulo}</p>
+                                            </div>
+
+                                            <div className="glass-panel rounded-3xl p-5 border border-slate-700 space-y-4 shadow-xl">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="bg-slate-900/90 p-4 rounded-2xl text-center border border-slate-800 shadow-inner">
+                                                        <span className="text-[10px] text-slate-400 uppercase font-extrabold block mb-1">Status</span>
+                                                        <span className="text-xs font-black text-white">{resultadoPauta.statusSessao}</span>
+                                                    </div>
+                                                    <div className="bg-slate-900/90 p-4 rounded-2xl text-center border border-slate-800 shadow-inner">
+                                                        <span className="text-[10px] text-slate-400 uppercase font-extrabold block mb-1">Deliberação</span>
+                                                        <span className={`text-xs font-black ${
+                                                            resultadoPauta.resultado === 'APROVADA' ? 'text-emerald-400' :
+                                                            resultadoPauta.resultado === 'REPROVADA' ? 'text-rose-400' : 'text-amber-400'
+                                                        }`}>
+                                                            {resultadoPauta.resultado}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="p-4 bg-slate-900/90 rounded-2xl space-y-2.5 border border-slate-800 text-xs shadow-inner">
+                                                    <div className="flex justify-between font-semibold pb-1 border-b border-slate-800">
+                                                        <span className="text-slate-300">Total de Votos:</span>
+                                                        <span className="text-white font-mono font-bold text-sm">{resultadoPauta.totalVotos}</span>
+                                                    </div>
+                                                    <div className="flex justify-between font-semibold text-emerald-400">
+                                                        <span>Votos "SIM":</span>
+                                                        <span className="font-mono font-bold text-sm">{resultadoPauta.votosSim}</span>
+                                                    </div>
+                                                    <div className="flex justify-between font-semibold text-rose-400">
+                                                        <span>Votos "NÃO":</span>
+                                                        <span className="font-mono font-bold text-sm">{resultadoPauta.votosNao}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="pt-2 space-y-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleBuscarResultado(pautaSelecionada)}
+                                                        className="w-full py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-black uppercase tracking-wider border border-emerald-500/30 flex items-center justify-center gap-1.5 active:scale-98 transition shadow-md"
+                                                    >
+                                                        <span>🔄</span>
+                                                        <span>Atualizar Apuração</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSubView(null)}
+                                                        className="w-full py-3.5 rounded-2xl bg-slate-800 text-slate-300 text-xs font-bold active:scale-98 transition flex items-center justify-center gap-1.5"
+                                                    >
+                                                        <span>⬅️</span>
+                                                        <span>Voltar à Lista</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between pb-1">
+                                                <div>
+                                                    <h2 className="text-2xl font-black text-white">Assembleias & Pautas</h2>
+                                                    <p className="text-xs text-slate-400">Gerenciamento de pautas e sessões</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSubView('NOVA_PAUTA')}
+                                                    className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs uppercase tracking-wider glow-btn flex items-center gap-1.5 shadow-lg"
+                                                >
+                                                    <span>+</span>
+                                                    <span>Nova Pauta</span>
+                                                </button>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {pautas.length === 0 ? (
+                                                    <div className="p-8 text-center text-xs text-slate-400 glass-panel rounded-3xl space-y-3">
+                                                        <div className="text-4xl">📋</div>
+                                                        <p className="font-bold text-white text-sm">Nenhuma pauta cadastrada no servidor.</p>
+                                                        <button
+                                                            onClick={() => setSubView('NOVA_PAUTA')}
+                                                            className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
+                                                        >
+                                                            Cadastrar Primeira Pauta
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    pautas.map(p => {
+                                                        const aberta = p.sessaoAberta;
+                                                        const temSessao = !!p.statusSessao;
+
+                                                        return (
+                                                            <div key={p.id} className="option-card p-4 rounded-3xl space-y-3">
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <div>
+                                                                        <span className="text-[10px] font-mono text-emerald-400 font-black">#{p.id}</span>
+                                                                        <h3 className="text-sm font-extrabold text-white leading-snug">{p.titulo}</h3>
+                                                                        <p className="text-xs text-slate-400 line-clamp-2 mt-0.5">{p.descricao || "Sem descrição."}</p>
+                                                                    </div>
+                                                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${
+                                                                        aberta
+                                                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                                                                            : temSessao
+                                                                            ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                                                            : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                                                                    }`}>
+                                                                        {aberta ? "🟢 Votação Aberta" : temSessao ? "🔴 Encerrada" : "🟡 Sem Sessão"}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="pt-2 border-t border-slate-700/60 flex items-center gap-2">
+                                                                    {!temSessao ? (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setPautaSelecionada(p);
+                                                                                setSubView('ABRIR_SESSAO');
+                                                                            }}
+                                                                            className="w-full py-2.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-black transition text-center"
+                                                                        >
+                                                                            ⚡ Abrir Sessão de Votação
+                                                                        </button>
+                                                                    ) : (
+                                                                        <>
+                                                                            {aberta && (
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setPautaVotoId(p.id.toString());
+                                                                                        setAbaAtual('votar');
+                                                                                    }}
+                                                                                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition text-center shadow-md"
+                                                                                >
+                                                                                    🗳️ Votar
+                                                                                </button>
+                                                                            )}
+                                                                            <button
+                                                                                onClick={() => handleBuscarResultado(p)}
+                                                                                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition text-center"
+                                                                            >
+                                                                                📊 Ver Resultado
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ======================================================== */}
+                            {/* ABA 3: VOTAR (Terminal de Votação)                      */}
+                            {/* ======================================================== */}
+                            {abaAtual === 'votar' && (
+                                <div className="space-y-4 pt-1 animate-fadeIn">
+                                    <div className="text-center pb-1">
+                                        <h2 className="text-2xl font-black text-white">Terminal de Votação</h2>
+                                        <p className="text-xs text-slate-400">Emita seu voto seguro com validação de CPF:</p>
+                                    </div>
+
+                                    <div className="glass-panel rounded-3xl p-5 border border-slate-700 space-y-4 shadow-xl">
+                                        <form onSubmit={handleRegistrarVoto} className="space-y-4">
+                                            <div>
+                                                <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300 mb-1.5">
+                                                    Selecione a Pauta
+                                                </label>
+                                                <select
+                                                    value={pautaVotoId}
+                                                    onChange={(e) => setPautaVotoId(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                                                    required
+                                                >
+                                                    <option value="">-- Escolha a Pauta --</option>
+                                                    {pautas.map(p => (
+                                                        <option key={p.id} value={p.id}>
+                                                            #{p.id} - {p.titulo} {p.sessaoAberta ? "🟢 (Aberta)" : "🔴 (Fechada)"}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300">
+                                                        CPF do Associado
+                                                    </label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const novo = gerarCpfValido();
+                                                                setCpfVoto(novo);
+                                                                showToast(`CPF Válido: ${novo}`, 'info');
+                                                            }}
+                                                            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold active:scale-95 transition"
+                                                        >
+                                                            🎲 Válido
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const inv = gerarCpfInvalido();
+                                                                setCpfVoto(inv);
+                                                                showToast(`CPF Inválido: ${inv}`, 'error');
+                                                            }}
+                                                            className="px-2.5 py-1 rounded-lg bg-rose-600/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold active:scale-95 transition"
+                                                        >
+                                                            ⚠️ Inválido
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={cpfVoto}
+                                                    onChange={(e) => setCpfVoto(e.target.value)}
+                                                    placeholder="Ex: 19839091069"
+                                                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3.5 text-sm font-mono text-white focus:outline-none focus:border-emerald-500"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-300 mb-2">
+                                                    Seu Voto
+                                                </label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpcaoVoto('SIM')}
+                                                        className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 border transition shadow-sm ${
+                                                            opcaoVoto === 'SIM'
+                                                                ? 'bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-600/30'
+                                                                : 'bg-slate-900 text-slate-400 border-slate-700'
+                                                        }`}
+                                                    >
+                                                        <span className="text-lg">👍</span> Sim
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpcaoVoto('NAO')}
+                                                        className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 border transition shadow-sm ${
+                                                            opcaoVoto === 'NAO'
+                                                                ? 'bg-rose-600 text-white border-rose-400 ring-2 ring-rose-400/40 shadow-lg shadow-rose-600/30'
+                                                                : 'bg-slate-900 text-slate-400 border-slate-700'
+                                                        }`}
+                                                    >
+                                                        <span className="text-lg">👎</span> Não
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* BOTÃO CONFIRMAR E REGISTRAR VOTO */}
+                                            <div className="pt-2 pb-2">
+                                                <button
+                                                    type="submit"
+                                                    disabled={votoLoading || !pautaVotoId}
+                                                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-black text-sm uppercase tracking-wider glow-btn flex items-center justify-center gap-2 shadow-2xl disabled:opacity-50"
+                                                >
+                                                    {votoLoading ? (
+                                                        <>
+                                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                            <span>Processando Voto...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <span>🗳️</span>
+                                                            <span>Confirmar e Registrar Voto</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* BARRA DE NAVEGAÇÃO INFERIOR FIXA (PAGINADA NA BASE DA TELA) */}
+                    <nav className="flex-shrink-0 z-40 bg-slate-900/98 border-t border-slate-800/90 px-4 py-2 flex items-center justify-around shadow-2xl">
+                        <button
+                            onClick={() => {
+                                setSubView(null);
+                                setAbaAtual('pautas');
+                            }}
+                            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                                abaAtual === 'pautas'
+                                    ? 'text-emerald-400 bg-emerald-500/15 font-black border border-emerald-500/30'
+                                    : 'text-slate-400 hover:text-slate-200 font-medium'
+                            }`}
+                        >
+                            <span className="text-xl">📋</span>
+                            <span className="text-[11px] tracking-wide">Pautas</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setSubView(null);
+                                setAbaAtual('votar');
+                            }}
+                            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                                abaAtual === 'votar'
+                                    ? 'text-emerald-400 bg-emerald-500/15 font-black border border-emerald-500/30'
+                                    : 'text-slate-400 hover:text-slate-200 font-medium'
+                            }`}
+                        >
+                            <span className="text-xl">🗳️</span>
+                            <span className="text-[11px] tracking-wide">Votar</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setSubView(null);
+                                setInputIp(serverUrl);
+                                setAbaAtual('servidor');
+                            }}
+                            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-2xl transition-all ${
+                                abaAtual === 'servidor'
+                                    ? 'text-emerald-400 bg-emerald-500/15 font-black border border-emerald-500/30'
+                                    : 'text-slate-400 hover:text-slate-200 font-medium'
+                            }`}
+                        >
+                            <span className="text-xl">⚙️</span>
+                            <span className="text-[11px] tracking-wide">Servidor</span>
+                        </button>
+                    </nav>
+
+                    {/* Toast Notifications */}
+                    {toast && (
+                        <div className={`fixed bottom-20 left-4 right-4 max-w-sm mx-auto z-50 px-4 py-3.5 rounded-2xl border shadow-2xl text-xs font-bold text-center transition-all ${
+                            toast.type === 'error' ? 'bg-rose-600 border-rose-400 text-white' : toast.type === 'info' ? 'bg-blue-600 border-blue-400 text-white' : 'bg-emerald-600 border-emerald-400 text-white'
+                        }`}>
+                            {toast.message}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
